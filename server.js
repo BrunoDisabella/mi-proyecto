@@ -24,7 +24,7 @@ const io = require('socket.io')(server);
 let client;
 let currentQR = null;
 let isReady = false;
-// URL del webhook de n8n (usando GET)
+// URL del webhook de n8n (usando GET). Reemplaza esta URL con la que necesites.
 const N8N_WEBHOOK_URL = 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
 // Almacenamiento en memoria: Map<chatId, { name, isGroup, messages: [] }>
@@ -49,7 +49,7 @@ function applyMapping(data, mapping) {
 }
 
 function initializeWhatsAppClient() {
-  // Configuramos Puppeteer para no usar sandbox y deshabilitar GPU (necesario en Railway)
+  // Configura Puppeteer para no usar sandbox (necesario en Railway)
   client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -83,6 +83,7 @@ function initializeWhatsAppClient() {
     io.emit('ready', { authenticated: true });
     try {
       const chatList = await client.getChats();
+      // Se crea la estructura de chats sin intentar cargar mensajes antiguos
       for (const chat of chatList) {
         const chatId = chat.id._serialized;
         const name = chat.name || chat.id.user || 'Chat sin nombre';
@@ -90,24 +91,6 @@ function initializeWhatsAppClient() {
         if (!chats.has(chatId)) {
           chats.set(chatId, { name, isGroup, messages: [] });
         }
-        // Se comenta la parte de fetchMessages para evitar errores de sesión cerrada
-        /*
-        try {
-          const olderMessages = await chat.fetchMessages({ limit: 50 });
-          const chatData = chats.get(chatId);
-          olderMessages.forEach(m => {
-            const senderId = m.fromMe ? 'me' : (m.author || m.from);
-            chatData.messages.push({
-              sender: senderId,
-              message: m.body,
-              timestamp: m.timestamp * 1000,
-              fromMe: m.fromMe ? 1 : 0
-            });
-          });
-        } catch (err) {
-          console.error('Error al fetchMessages en chat:', chatId, err.message);
-        }
-        */
       }
       io.emit('chats', Array.from(chats.entries()).map(([chatId, data]) => ({
         id: chatId,
@@ -119,7 +102,7 @@ function initializeWhatsAppClient() {
     }
   });
 
-  // Al recibir un mensaje (entrante), se activa el webhook GET
+  // Al recibir un mensaje (entrante), se agrega al historial y se activa el webhook GET
   client.on('message', async (msg) => {
     if (msg.fromMe) return;
     const chatId = msg.from;
@@ -154,7 +137,7 @@ function initializeWhatsAppClient() {
     }
   });
 
-  // Al enviar un mensaje (saliente), se activa el webhook GET
+  // Al enviar un mensaje (saliente), se agrega al historial y se activa el webhook GET
   client.on('message_create', async (msg) => {
     if (!msg.fromMe) return;
     const chatId = msg.to;
@@ -199,33 +182,6 @@ function initializeWhatsAppClient() {
 }
 
 initializeWhatsAppClient();
-
-// Endpoint para guardar la configuración del Webhook avanzado (para pruebas)
-app.post('/api/webhook/request', async (req, res) => {
-  const { url, method, headers, body, mapping } = req.body;
-  if (!url || !method) {
-    return res.status(400).json({ error: 'URL y método son requeridos' });
-  }
-  try {
-    const config = {
-      method: method.toLowerCase(),
-      url,
-      headers: headers || {}
-    };
-    if (['post', 'put', 'delete'].includes(method.toLowerCase())) {
-      config.data = body || null;
-    }
-    const response = await axios(config);
-    let result = response.data;
-    if (mapping) {
-      result = applyMapping(response.data, mapping);
-    }
-    return res.json({ status: 'success', response: result });
-  } catch (error) {
-    console.error('Error en solicitud webhook:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-});
 
 // Endpoint para obtener el QR
 app.get('/api/qr', (req, res) => {
