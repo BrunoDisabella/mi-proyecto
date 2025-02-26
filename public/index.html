@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhatsApp Web Integration</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="qr-container">
+    <h2>Conectar a WhatsApp</h2>
+    <p>Escanea el código QR con tu app de WhatsApp para iniciar sesión:</p>
+    <img id="qr-image" src="" alt="QR de WhatsApp" />
+  </div>
+  <div id="app" style="display: none;">
+    <div id="sidebar">
+      <div id="sidebar-header">
+        <h2>Chats</h2>
+        <div class="buttons">
+          <button id="webhookBtn">Webhook</button>
+          <button id="logoutBtn">Desconectar</button>
+        </div>
+      </div>
+      <ul id="chat-list"></ul>
+    </div>
+    <div id="chat-area">
+      <div id="chat-header">
+        <h3 id="chat-title">Selecciona un chat</h3>
+      </div>
+      <div id="messages"></div>
+      <form id="message-form">
+        <input type="text" id="message-input" placeholder="Escribe un mensaje..." autocomplete="off" />
+        <button type="submit">Enviar</button>
+      </form>
+      <div id="webhook-section" style="display: none;">
+        <h3>Configurar Webhook para n8n</h3>
+        <form id="webhook-form">
+          <input type="text" id="webhook-url" placeholder="URL" required />
+          <select id="webhook-method" required>
+            <option value="GET">GET</option>
+            <option value="POST" selected>POST</option>
+            <option value="PUT">PUT</option>
+            <option value="DELETE">DELETE</option>
+          </select>
+          <div id="headers-container">
+            <h4>Encabezados</h4>
+            <div class="header-row">
+              <input type="text" class="header-key" placeholder="Key" value="Content-Type" />
+              <input type="text" class="header-value" placeholder="Value" value="application/json" />
+              <button type="button" class="remove-header">-</button>
+            </div>
+            <button type="button" id="add-header">Agregar Encabezado</button>
+          </div>
+          <textarea id="webhook-body" placeholder="Cuerpo (JSON o texto)" rows="3"></textarea>
+          <div id="mapping-container">
+            <h4>Mapeo de respuesta</h4>
+            <div class="mapping-row">
+              <input type="text" class="mapping-jsonpath" placeholder="JSONPath" />
+              <input type="text" class="mapping-field" placeholder="Campo personalizado" />
+              <button type="button" class="remove-mapping">-</button>
+            </div>
+            <button type="button" id="add-mapping">Agregar Mapeo</button>
+          </div>
+          <button type="submit">Guardar Configuración</button>
+        </form>
+        <div id="webhook-response"></div>
+      </div>
+    </div>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

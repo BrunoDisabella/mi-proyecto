@@ -1,0 +1,12 @@
+# Ignorar dependencias de Node.js
+node_modules/
+
+# Ignorar caché y autenticación de WhatsApp Web JS
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Ignorar base de datos local
+whatsapp.db
+
+# Ignorar archivos de log
+*.log
