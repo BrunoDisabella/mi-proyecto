@@ -24,10 +24,11 @@ const io = require('socket.io')(server);
 let client;
 let currentQR = null;
 let isReady = false;
-// URL del webhook de n8n (usando GET). Reemplaza esta URL según tus necesidades.
+// URL del webhook de n8n (se usará GET)
+// Reemplaza la URL por la que necesites
 const N8N_WEBHOOK_URL = 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
-// Almacenamiento en memoria: Map de chats
+// Almacenamiento en memoria: Map<chatId, { name, isGroup, messages: [] }>
 const chats = new Map();
 
 function applyMapping(data, mapping) {
@@ -49,6 +50,7 @@ function applyMapping(data, mapping) {
 }
 
 function initializeWhatsAppClient() {
+  // Configura Puppeteer para no usar sandbox (requerido en Railway)
   client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -68,7 +70,6 @@ function initializeWhatsAppClient() {
       isReady = false;
       console.log('QR generado. Escanéalo para iniciar sesión.');
       io.emit('qr', { qr: currentQR });
-      io.emit('status', { connected: false });
     });
   });
 
@@ -81,10 +82,8 @@ function initializeWhatsAppClient() {
     isReady = true;
     currentQR = null;
     io.emit('ready', { authenticated: true });
-    io.emit('status', { connected: true });
     try {
       const chatList = await client.getChats();
-      // Crea la estructura de chats (sin mensajes antiguos)
       for (const chat of chatList) {
         const chatId = chat.id._serialized;
         const name = chat.name || chat.id.user || 'Chat sin nombre';
@@ -92,6 +91,26 @@ function initializeWhatsAppClient() {
         if (!chats.has(chatId)) {
           chats.set(chatId, { name, isGroup, messages: [] });
         }
+        // Esperar 5 segundos para intentar obtener el historial antiguo de cada chat
+        setTimeout(async () => {
+          try {
+            const olderMessages = await chat.fetchMessages({ limit: 50 });
+            const chatData = chats.get(chatId);
+            olderMessages.forEach(m => {
+              const senderId = m.fromMe ? 'me' : (m.author || m.from);
+              chatData.messages.push({
+                sender: senderId,
+                message: m.body,
+                timestamp: m.timestamp * 1000,
+                fromMe: m.fromMe ? 1 : 0
+              });
+            });
+            // Notifica a los clientes que el historial se actualizó (opcional)
+            io.emit('new_message', { chatId, message: "Historial actualizado" });
+          } catch (err) {
+            console.error('Error al fetchMessages en chat:', chatId, err.message);
+          }
+        }, 5000);
       }
       io.emit('chats', Array.from(chats.entries()).map(([chatId, data]) => ({
         id: chatId,
@@ -103,7 +122,7 @@ function initializeWhatsAppClient() {
     }
   });
 
-  // Al recibir un mensaje entrante
+  // Al recibir un mensaje (entrante)
   client.on('message', async (msg) => {
     if (msg.fromMe) return;
     const chatId = msg.from;
@@ -138,7 +157,7 @@ function initializeWhatsAppClient() {
     }
   });
 
-  // Al enviar un mensaje
+  // Al enviar un mensaje (saliente)
   client.on('message_create', async (msg) => {
     if (!msg.fromMe) return;
     const chatId = msg.to;
@@ -176,7 +195,6 @@ function initializeWhatsAppClient() {
   client.on('disconnected', (reason) => {
     console.log('WhatsApp desconectado:', reason);
     isReady = false;
-    io.emit('status', { connected: false });
     initializeWhatsAppClient();
   });
 
@@ -214,6 +232,7 @@ app.get('/api/chat/:chatId', (req, res) => {
 app.post('/api/send', async (req, res) => {
   const { chatId, message } = req.body;
   if (!chatId || !message) return res.status(400).json({ error: 'chatId y message requeridos' });
+  if (!isReady) return res.status(503).json({ error: 'Cliente de WhatsApp no está listo' });
   let targetChatId = chatId;
   if (!targetChatId.endsWith('@c.us') && !targetChatId.endsWith('@g.us')) {
     targetChatId += targetChatId.includes('-') ? '@g.us' : '@c.us';
@@ -222,7 +241,8 @@ app.post('/api/send', async (req, res) => {
     await client.sendMessage(targetChatId, message);
     res.json({ status: 'success', chatId: targetChatId });
   } catch (error) {
-    res.status(500).json({ error: 'No se pudo enviar el mensaje' });
+    console.error("Error en /api/send:", error.message);
+    res.status(500).json({ error: 'No se pudo enviar el mensaje', details: error.message });
   }
 });
 
