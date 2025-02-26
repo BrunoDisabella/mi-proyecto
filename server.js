@@ -1,3 +1,12 @@
+// Elimina la sesión antigua para forzar un nuevo inicio
+const fs = require('fs');
+const path = require('path');
+const authPath = path.join(__dirname, '.wwebjs_auth');
+if (fs.existsSync(authPath)) {
+  fs.rmSync(authPath, { recursive: true, force: true });
+  console.log('Sesión anterior eliminada.');
+}
+
 const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
@@ -15,7 +24,7 @@ const io = require('socket.io')(server);
 let client;
 let currentQR = null;
 let isReady = false;
-// URL del webhook de n8n (usando GET)
+// URL del webhook de n8n (se usará GET) – reemplaza con la URL correcta
 const N8N_WEBHOOK_URL = 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
 // Almacenamiento en memoria: Map<chatId, { name, isGroup, messages: [] }>
@@ -40,7 +49,7 @@ function applyMapping(data, mapping) {
 }
 
 function initializeWhatsAppClient() {
-  // Configuración de Puppeteer para no usar sandbox y deshabilitar GPU
+  // Configura Puppeteer para no usar sandbox (soluciona el error al ejecutarse como root)
   client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -275,6 +284,6 @@ app.post('/api/disconnect', async (req, res) => {
   res.json({ status: 'disconnected' });
 });
 
-server.listen(PORT, () => {
-  console.log(`Servidor escuchando en http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor escuchando en http://0.0.0.0:${PORT}`);
 });
