@@ -3,6 +3,7 @@
 // (Opcional) Elimina sesiones antiguas para forzar un inicio limpio
 const fs = require('fs');
 const path = require('path');
+// Borra todas las carpetas de autenticación que comiencen con .wwebjs_auth_
 const authFiles = fs.readdirSync(__dirname).filter(file => file.startsWith('.wwebjs_auth_'));
 authFiles.forEach(file => {
   const fullPath = path.join(__dirname, file);
@@ -30,7 +31,7 @@ const devices = {}; // key: deviceId, value: { client, currentQR, isReady, chats
 // Configuración del webhook (usa GET)
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
-// Función para aplicar mapeo (para un endpoint de prueba de webhook)
+// Función para aplicar mapeo (para un endpoint de prueba del webhook)
 function applyMapping(data, mapping) {
   const result = {};
   for (const key in mapping) {
@@ -62,7 +63,12 @@ function initializeDevice(deviceId) {
     authStrategy: new LocalAuth({ dataPath: `.wwebjs_auth_${deviceId}` }),
     puppeteer: {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--single-process']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
+        '--single-process'
+      ]
     }
   });
 
@@ -71,6 +77,7 @@ function initializeDevice(deviceId) {
       device.currentQR = err ? null : url;
       device.isReady = false;
       console.log(`[${deviceId}] QR generado.`);
+      // Emite el QR solo a los sockets que se han unido a la sala del dispositivo
       io.to(deviceId).emit('qr', { qr: device.currentQR });
     });
   });
@@ -145,7 +152,9 @@ function initializeDevice(deviceId) {
     io.to(deviceId).emit('new_message', { chatId, message: newMsg });
     if (N8N_WEBHOOK_URL) {
       try {
-        await axios.get(N8N_WEBHOOK_URL, { params: { phone: msg.from, message: messageText, timestamp } });
+        await axios.get(N8N_WEBHOOK_URL, {
+          params: { phone: msg.from, message: messageText, timestamp }
+        });
       } catch (error) {
         console.error(`[${deviceId}] Error en webhook (recibido):`, error.message);
       }
@@ -173,7 +182,9 @@ function initializeDevice(deviceId) {
     io.to(deviceId).emit('new_message', { chatId, message: newMsg });
     if (N8N_WEBHOOK_URL) {
       try {
-        await axios.get(N8N_WEBHOOK_URL, { params: { phone: msg.to, message: messageText, timestamp } });
+        await axios.get(N8N_WEBHOOK_URL, {
+          params: { phone: msg.to, message: messageText, timestamp }
+        });
       } catch (error) {
         console.error(`[${deviceId}] Error en webhook (enviado):`, error.message);
       }
@@ -190,7 +201,7 @@ function initializeDevice(deviceId) {
   return device;
 }
 
-// Socket.IO: Cuando un cliente se conecta, permite que se una a una sala de dispositivo
+// Socket.IO: Permitir que cada cliente se una a la sala de su dispositivo
 io.on('connection', (socket) => {
   socket.on('join', (deviceId) => {
     socket.join(deviceId);
@@ -200,7 +211,7 @@ io.on('connection', (socket) => {
 
 // Endpoint para crear un nuevo dispositivo
 app.post('/api/device/new', (req, res) => {
-  const deviceId = Date.now().toString(); // ID simple basado en timestamp
+  const deviceId = Date.now().toString(); // Genera un ID simple basado en timestamp
   const device = initializeDevice(deviceId);
   devices[deviceId] = device;
   res.json({ deviceId });
