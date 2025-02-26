@@ -1,6 +1,6 @@
 // server.js - Multi-dispositivo para Railway
 
-// Elimina sesiones antiguas (opcional, para forzar inicio limpio)
+// (Opcional) Elimina sesiones antiguas para forzar un inicio limpio
 const fs = require('fs');
 const path = require('path');
 const authFiles = fs.readdirSync(__dirname).filter(file => file.startsWith('.wwebjs_auth_'));
@@ -25,12 +25,12 @@ const server = http.createServer(app);
 const io = require('socket.io')(server);
 
 // Objeto global para almacenar dispositivos
-const devices = {};  // key: deviceId, value: { client, currentQR, isReady, chats (Map) }
+const devices = {}; // key: deviceId, value: { client, currentQR, isReady, chats (Map) }
 
 // Configuración del webhook (usa GET)
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
-// Función para aplicar mapeo (para el endpoint de prueba de webhook)
+// Función para aplicar mapeo (para un endpoint de prueba de webhook)
 function applyMapping(data, mapping) {
   const result = {};
   for (const key in mapping) {
@@ -62,12 +62,7 @@ function initializeDevice(deviceId) {
     authStrategy: new LocalAuth({ dataPath: `.wwebjs_auth_${deviceId}` }),
     puppeteer: {
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-gpu',
-        '--single-process'
-      ]
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--single-process']
     }
   });
 
@@ -98,7 +93,7 @@ function initializeDevice(deviceId) {
         if (!device.chats.has(chatId)) {
           device.chats.set(chatId, { name, isGroup, messages: [] });
         }
-        // Cargar historial antiguo (hasta 50 mensajes)
+        // Cargar historial antiguo (hasta 50 mensajes) después de 5 segundos
         setTimeout(async () => {
           try {
             const olderMessages = await chat.fetchMessages({ limit: 50 });
@@ -114,7 +109,7 @@ function initializeDevice(deviceId) {
             });
             io.to(deviceId).emit('chatsUpdated');
           } catch (err) {
-            console.error(`[${deviceId}] Error al fetchMessages en chat: ${chatId}`, err.message);
+            console.error(`[${deviceId}] Error en fetchMessages en chat ${chatId}:`, err.message);
           }
         }, 5000);
       }
@@ -150,15 +145,9 @@ function initializeDevice(deviceId) {
     io.to(deviceId).emit('new_message', { chatId, message: newMsg });
     if (N8N_WEBHOOK_URL) {
       try {
-        await axios.get(N8N_WEBHOOK_URL, {
-          params: {
-            phone: msg.from,
-            message: messageText,
-            timestamp: timestamp
-          }
-        });
+        await axios.get(N8N_WEBHOOK_URL, { params: { phone: msg.from, message: messageText, timestamp } });
       } catch (error) {
-        console.error(`[${deviceId}] Error enviando webhook a n8n (recibido):`, error.message);
+        console.error(`[${deviceId}] Error en webhook (recibido):`, error.message);
       }
     }
   });
@@ -184,15 +173,9 @@ function initializeDevice(deviceId) {
     io.to(deviceId).emit('new_message', { chatId, message: newMsg });
     if (N8N_WEBHOOK_URL) {
       try {
-        await axios.get(N8N_WEBHOOK_URL, {
-          params: {
-            phone: msg.to,
-            message: messageText,
-            timestamp: timestamp
-          }
-        });
+        await axios.get(N8N_WEBHOOK_URL, { params: { phone: msg.to, message: messageText, timestamp } });
       } catch (error) {
-        console.error(`[${deviceId}] Error enviando webhook a n8n (enviado):`, error.message);
+        console.error(`[${deviceId}] Error en webhook (enviado):`, error.message);
       }
     }
   });
@@ -207,9 +190,17 @@ function initializeDevice(deviceId) {
   return device;
 }
 
+// Socket.IO: Cuando un cliente se conecta, permite que se una a una sala de dispositivo
+io.on('connection', (socket) => {
+  socket.on('join', (deviceId) => {
+    socket.join(deviceId);
+    console.log(`Socket ${socket.id} se unió a la sala ${deviceId}`);
+  });
+});
+
 // Endpoint para crear un nuevo dispositivo
 app.post('/api/device/new', (req, res) => {
-  const deviceId = Date.now().toString(); // Genera un ID simple
+  const deviceId = Date.now().toString(); // ID simple basado en timestamp
   const device = initializeDevice(deviceId);
   devices[deviceId] = device;
   res.json({ deviceId });
