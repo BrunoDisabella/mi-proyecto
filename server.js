@@ -98,7 +98,7 @@ function initializeDevice(deviceId) {
         if (!device.chats.has(chatId)) {
           device.chats.set(chatId, { name, isGroup, messages: [] });
         }
-        // Cargar historial antiguo (hasta 50 mensajes) con un retraso para evitar errores
+        // Cargar historial antiguo (hasta 50 mensajes)
         setTimeout(async () => {
           try {
             const olderMessages = await chat.fetchMessages({ limit: 50 });
@@ -209,7 +209,7 @@ function initializeDevice(deviceId) {
 
 // Endpoint para crear un nuevo dispositivo
 app.post('/api/device/new', (req, res) => {
-  const deviceId = Date.now().toString(); // Genera un ID simple basado en timestamp
+  const deviceId = Date.now().toString(); // Genera un ID simple
   const device = initializeDevice(deviceId);
   devices[deviceId] = device;
   res.json({ deviceId });
@@ -247,7 +247,7 @@ app.get('/api/device/:deviceId/chat/:chatId', (req, res) => {
   res.json(sortedMessages);
 });
 
-// Endpoint para enviar un mensaje desde un dispositivo (para uso externo)
+// Endpoint para enviar un mensaje desde un dispositivo
 app.post('/api/device/:deviceId/send', async (req, res) => {
   const { deviceId } = req.params;
   const { chatId, message } = req.body;
