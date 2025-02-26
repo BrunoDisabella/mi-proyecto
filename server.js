@@ -15,7 +15,7 @@ const io = require('socket.io')(server);
 let client;
 let currentQR = null;
 let isReady = false;
-// URL del webhook de n8n (utilizando GET)
+// URL del webhook de n8n (usando GET)
 const N8N_WEBHOOK_URL = 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
 // Almacenamiento en memoria: Map<chatId, { name, isGroup, messages: [] }>
@@ -40,12 +40,17 @@ function applyMapping(data, mapping) {
 }
 
 function initializeWhatsAppClient() {
-  // Configuramos Puppeteer para no usar sandbox (soluciona el error de root)
+  // Configuración de Puppeteer para no usar sandbox y deshabilitar GPU
   client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
+        '--single-process'
+      ]
     }
   });
 
