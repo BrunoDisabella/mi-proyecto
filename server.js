@@ -5,7 +5,7 @@ const axios = require('axios');
 const http = require('http');
 
 const app = express();
-const PORT = process.env.PORT || 8080; // Asegúrate de que Railway use el puerto correcto
+const PORT = process.env.PORT || 8080;
 app.use(express.json());
 app.use(express.static('public'));
 
@@ -15,8 +15,7 @@ const io = require('socket.io')(server);
 let client;
 let currentQR = null;
 let isReady = false;
-// URL del webhook de n8n (usando GET)
-// Reemplaza esta URL por la correcta
+// URL del webhook de n8n (utilizando GET)
 const N8N_WEBHOOK_URL = 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
 // Almacenamiento en memoria: Map<chatId, { name, isGroup, messages: [] }>
@@ -41,7 +40,7 @@ function applyMapping(data, mapping) {
 }
 
 function initializeWhatsAppClient() {
-  // Configura Puppeteer para que no use sandbox
+  // Configuramos Puppeteer para no usar sandbox (soluciona el error de root)
   client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
