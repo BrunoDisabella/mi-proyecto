@@ -24,7 +24,7 @@ const io = require('socket.io')(server);
 let client;
 let currentQR = null;
 let isReady = false;
-// URL del webhook de n8n (se usará GET) – reemplaza con la URL correcta
+// URL del webhook de n8n (usando GET)
 const N8N_WEBHOOK_URL = 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
 // Almacenamiento en memoria: Map<chatId, { name, isGroup, messages: [] }>
@@ -49,7 +49,7 @@ function applyMapping(data, mapping) {
 }
 
 function initializeWhatsAppClient() {
-  // Configura Puppeteer para no usar sandbox (soluciona el error al ejecutarse como root)
+  // Configuramos Puppeteer para no usar sandbox y deshabilitar GPU (necesario en Railway)
   client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -90,6 +90,8 @@ function initializeWhatsAppClient() {
         if (!chats.has(chatId)) {
           chats.set(chatId, { name, isGroup, messages: [] });
         }
+        // Se comenta la parte de fetchMessages para evitar errores de sesión cerrada
+        /*
         try {
           const olderMessages = await chat.fetchMessages({ limit: 50 });
           const chatData = chats.get(chatId);
@@ -105,6 +107,7 @@ function initializeWhatsAppClient() {
         } catch (err) {
           console.error('Error al fetchMessages en chat:', chatId, err.message);
         }
+        */
       }
       io.emit('chats', Array.from(chats.entries()).map(([chatId, data]) => ({
         id: chatId,
@@ -197,7 +200,7 @@ function initializeWhatsAppClient() {
 
 initializeWhatsAppClient();
 
-// Endpoint para guardar la configuración del Webhook avanzado y probarla (para pruebas)
+// Endpoint para guardar la configuración del Webhook avanzado (para pruebas)
 app.post('/api/webhook/request', async (req, res) => {
   const { url, method, headers, body, mapping } = req.body;
   if (!url || !method) {
