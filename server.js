@@ -1,4 +1,6 @@
-// server.js (sin cambios significativos en el estilo, solo aseguro compatibilidad)
+// server.js (corregido)
+
+// Elimina la sesión antigua para forzar un nuevo inicio
 const fs = require('fs');
 const path = require('path');
 const authPath = path.join(__dirname, '.wwebjs_auth');
@@ -21,22 +23,29 @@ app.use(express.static('public'));
 const server = http.createServer(app);
 const io = require('socket.io')(server);
 
+// Configuración: URL del webhook (puedes definirla en Railway como variable de entorno)
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
 let client;
 let currentQR = null;
 let isReady = false;
 
+// Almacenamiento en memoria de chats: Map<chatId, { name, isGroup, messages: [] }>
 const chats = new Map();
 
+// Función para aplicar mapeo (si se configura) en la respuesta de un webhook de prueba
 function applyMapping(data, mapping) {
   const result = {};
   for (const key in mapping) {
     const path = mapping[key].split('.');
     let value = data;
     for (const p of path) {
-      if (value && p in value) value = value[p];
-      else { value = undefined; break; }
+      if (value && p in value) {
+        value = value[p];
+      } else {
+        value = undefined;
+        break;
+      }
     }
     result[key] = value;
   }
@@ -44,14 +53,28 @@ function applyMapping(data, mapping) {
 }
 
 function initializeWhatsAppClient() {
+  // Configuración de Puppeteer para entornos como Railway (sin sandbox)
   client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--single-process']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
+        '--single-process',
+        '--disable-dev-shm-usage', // Mejora la estabilidad en entornos con poca memoria
+        '--disable-accelerated-2d-canvas',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+      ],
+      executablePath: '/usr/bin/google-chrome-stable', // Ruta común en Railway para Chrome
+      ignoreHTTPSErrors: true, // Ignora errores de HTTPS para conexiones más estables
+      timeout: 60000, // Aumenta el tiempo de espera para conexiones lentas
     }
   });
 
+  // Cuando se genera el QR, se convierte a Data URL y se envía a los clientes vía Socket.IO
   client.on('qr', (qr) => {
     qrcode.toDataURL(qr, (err, url) => {
       currentQR = err ? null : url;
@@ -61,7 +84,10 @@ function initializeWhatsAppClient() {
     });
   });
 
-  client.on('authenticated', () => console.log('WhatsApp autenticado.'));
+  client.on('authenticated', () => {
+    console.log('WhatsApp autenticado.');
+  });
+
   client.on('ready', async () => {
     console.log('Cliente WhatsApp listo.');
     isReady = true;
@@ -73,7 +99,10 @@ function initializeWhatsAppClient() {
         const chatId = chat.id._serialized;
         const name = chat.name || chat.id.user || 'Chat sin nombre';
         const isGroup = chat.isGroup;
-        if (!chats.has(chatId)) chats.set(chatId, { name, isGroup, messages: [] });
+        if (!chats.has(chatId)) {
+          chats.set(chatId, { name, isGroup, messages: [] });
+        }
+        // Intenta cargar el historial antiguo de mensajes (hasta 50) con un pequeño retraso
         setTimeout(async () => {
           try {
             const olderMessages = await chat.fetchMessages({ limit: 50 });
@@ -87,6 +116,7 @@ function initializeWhatsAppClient() {
                 fromMe: m.fromMe ? 1 : 0
               });
             });
+            // (Opcional) Notifica a los clientes que el historial se actualizó
             io.emit('new_message', { chatId, message: "Historial actualizado" });
           } catch (err) {
             console.error('Error al fetchMessages en chat:', chatId, err.message);
@@ -103,6 +133,7 @@ function initializeWhatsAppClient() {
     }
   });
 
+  // Al recibir un mensaje (entrante)
   client.on('message', async (msg) => {
     if (msg.fromMe) return;
     const chatId = msg.from;
@@ -122,15 +153,23 @@ function initializeWhatsAppClient() {
     const newMsg = { sender: senderId, message: messageText, timestamp, fromMe: 0 };
     chatData.messages.push(newMsg);
     io.emit('new_message', { chatId, message: newMsg });
+    // Envía el webhook al recibir un mensaje
     if (N8N_WEBHOOK_URL) {
       try {
-        await axios.get(N8N_WEBHOOK_URL, { params: { phone: msg.from, message: messageText, timestamp } });
+        await axios.get(N8N_WEBHOOK_URL, {
+          params: {
+            phone: msg.from,
+            message: messageText,
+            timestamp: timestamp
+          }
+        });
       } catch (error) {
         console.error('Error enviando webhook a n8n (recibido):', error.message);
       }
     }
   });
 
+  // Al enviar un mensaje (saliente)
   client.on('message_create', async (msg) => {
     if (!msg.fromMe) return;
     const chatId = msg.to;
@@ -150,9 +189,16 @@ function initializeWhatsAppClient() {
     const newMsg = { sender: senderId, message: messageText, timestamp, fromMe: 1 };
     chatData.messages.push(newMsg);
     io.emit('new_message', { chatId, message: newMsg });
+    // Envía el webhook al enviar un mensaje
     if (N8N_WEBHOOK_URL) {
       try {
-        await axios.get(N8N_WEBHOOK_URL, { params: { phone: msg.to, message: messageText, timestamp } });
+        await axios.get(N8N_WEBHOOK_URL, {
+          params: {
+            phone: msg.to,
+            message: messageText,
+            timestamp: timestamp
+          }
+        });
       } catch (error) {
         console.error('Error enviando webhook a n8n (enviado):', error.message);
       }
@@ -170,11 +216,13 @@ function initializeWhatsAppClient() {
 
 initializeWhatsAppClient();
 
+// Endpoint para obtener el QR
 app.get('/api/qr', (req, res) => {
   if (isReady) return res.json({ authenticated: true });
   res.json({ qr: currentQR });
 });
 
+// Endpoint para obtener la lista de chats
 app.get('/api/chats', (req, res) => {
   if (!isReady) return res.status(503).json({ error: 'WhatsApp no conectado' });
   const chatArray = [];
@@ -184,6 +232,7 @@ app.get('/api/chats', (req, res) => {
   res.json(chatArray);
 });
 
+// Endpoint para obtener el historial de mensajes de un chat
 app.get('/api/chat/:chatId', (req, res) => {
   const chatId = req.params.chatId;
   if (!chats.has(chatId)) return res.json([]);
@@ -192,6 +241,7 @@ app.get('/api/chat/:chatId', (req, res) => {
   res.json(sortedMessages);
 });
 
+// Endpoint para enviar un mensaje (para uso externo)
 app.post('/api/send', async (req, res) => {
   const { chatId, message } = req.body;
   if (!chatId || !message) return res.status(400).json({ error: 'chatId y message requeridos' });
@@ -209,6 +259,7 @@ app.post('/api/send', async (req, res) => {
   }
 });
 
+// Endpoint para desconectar
 app.post('/api/disconnect', async (req, res) => {
   if (!isReady) return res.json({ status: 'already_disconnected' });
   try {
