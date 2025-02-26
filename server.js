@@ -21,16 +21,17 @@ app.use(express.static('public'));
 const server = http.createServer(app);
 const io = require('socket.io')(server);
 
+// Configuración: URL del webhook (puedes definirla en Railway como variable de entorno)
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
+
 let client;
 let currentQR = null;
 let isReady = false;
-// URL del webhook de n8n (se usará GET)
-// Reemplaza la URL por la que necesites
-const N8N_WEBHOOK_URL = 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
-// Almacenamiento en memoria: Map<chatId, { name, isGroup, messages: [] }>
+// Almacenamiento en memoria de chats: Map<chatId, { name, isGroup, messages: [] }>
 const chats = new Map();
 
+// Función para aplicar mapeo (si se configura) en la respuesta de un webhook de prueba
 function applyMapping(data, mapping) {
   const result = {};
   for (const key in mapping) {
@@ -50,7 +51,7 @@ function applyMapping(data, mapping) {
 }
 
 function initializeWhatsAppClient() {
-  // Configura Puppeteer para no usar sandbox (requerido en Railway)
+  // Configuración de Puppeteer para entornos como Railway (sin sandbox)
   client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -64,6 +65,7 @@ function initializeWhatsAppClient() {
     }
   });
 
+  // Cuando se genera el QR, se convierte a Data URL y se envía a los clientes vía Socket.IO
   client.on('qr', (qr) => {
     qrcode.toDataURL(qr, (err, url) => {
       currentQR = err ? null : url;
@@ -91,7 +93,7 @@ function initializeWhatsAppClient() {
         if (!chats.has(chatId)) {
           chats.set(chatId, { name, isGroup, messages: [] });
         }
-        // Esperar 5 segundos para intentar obtener el historial antiguo de cada chat
+        // Intenta cargar el historial antiguo de mensajes (hasta 50) con un pequeño retraso
         setTimeout(async () => {
           try {
             const olderMessages = await chat.fetchMessages({ limit: 50 });
@@ -105,7 +107,7 @@ function initializeWhatsAppClient() {
                 fromMe: m.fromMe ? 1 : 0
               });
             });
-            // Notifica a los clientes que el historial se actualizó (opcional)
+            // (Opcional) Notifica a los clientes que el historial se actualizó
             io.emit('new_message', { chatId, message: "Historial actualizado" });
           } catch (err) {
             console.error('Error al fetchMessages en chat:', chatId, err.message);
@@ -142,6 +144,7 @@ function initializeWhatsAppClient() {
     const newMsg = { sender: senderId, message: messageText, timestamp, fromMe: 0 };
     chatData.messages.push(newMsg);
     io.emit('new_message', { chatId, message: newMsg });
+    // Envía el webhook al recibir un mensaje
     if (N8N_WEBHOOK_URL) {
       try {
         await axios.get(N8N_WEBHOOK_URL, {
@@ -177,6 +180,7 @@ function initializeWhatsAppClient() {
     const newMsg = { sender: senderId, message: messageText, timestamp, fromMe: 1 };
     chatData.messages.push(newMsg);
     io.emit('new_message', { chatId, message: newMsg });
+    // Envía el webhook al enviar un mensaje
     if (N8N_WEBHOOK_URL) {
       try {
         await axios.get(N8N_WEBHOOK_URL, {
