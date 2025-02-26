@@ -24,10 +24,10 @@ const io = require('socket.io')(server);
 let client;
 let currentQR = null;
 let isReady = false;
-// URL del webhook de n8n (usando GET). Reemplaza esta URL con la que necesites.
+// URL del webhook de n8n (usando GET). Reemplaza esta URL según tus necesidades.
 const N8N_WEBHOOK_URL = 'https://primary-production-bbfb.up.railway.app/webhook-test/1fae31d9-74e6-4d10-becb-4043413f0a49';
 
-// Almacenamiento en memoria: Map<chatId, { name, isGroup, messages: [] }>
+// Almacenamiento en memoria: Map de chats
 const chats = new Map();
 
 function applyMapping(data, mapping) {
@@ -49,7 +49,6 @@ function applyMapping(data, mapping) {
 }
 
 function initializeWhatsAppClient() {
-  // Configura Puppeteer para no usar sandbox (necesario en Railway)
   client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -69,6 +68,7 @@ function initializeWhatsAppClient() {
       isReady = false;
       console.log('QR generado. Escanéalo para iniciar sesión.');
       io.emit('qr', { qr: currentQR });
+      io.emit('status', { connected: false });
     });
   });
 
@@ -81,9 +81,10 @@ function initializeWhatsAppClient() {
     isReady = true;
     currentQR = null;
     io.emit('ready', { authenticated: true });
+    io.emit('status', { connected: true });
     try {
       const chatList = await client.getChats();
-      // Se crea la estructura de chats sin intentar cargar mensajes antiguos
+      // Crea la estructura de chats (sin mensajes antiguos)
       for (const chat of chatList) {
         const chatId = chat.id._serialized;
         const name = chat.name || chat.id.user || 'Chat sin nombre';
@@ -102,7 +103,7 @@ function initializeWhatsAppClient() {
     }
   });
 
-  // Al recibir un mensaje (entrante), se agrega al historial y se activa el webhook GET
+  // Al recibir un mensaje entrante
   client.on('message', async (msg) => {
     if (msg.fromMe) return;
     const chatId = msg.from;
@@ -137,7 +138,7 @@ function initializeWhatsAppClient() {
     }
   });
 
-  // Al enviar un mensaje (saliente), se agrega al historial y se activa el webhook GET
+  // Al enviar un mensaje
   client.on('message_create', async (msg) => {
     if (!msg.fromMe) return;
     const chatId = msg.to;
@@ -175,6 +176,7 @@ function initializeWhatsAppClient() {
   client.on('disconnected', (reason) => {
     console.log('WhatsApp desconectado:', reason);
     isReady = false;
+    io.emit('status', { connected: false });
     initializeWhatsAppClient();
   });
 
